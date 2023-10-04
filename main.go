@@ -1,6 +1,10 @@
 package main
-// TODO: auto reload
+// TODO: auto reload [ ]
+//       TODO: learn websocket [ ]
+//       TODO: inject code into html entry file to run websocket [ ]
 import(
+    "time"
+    "crypto/sha256"
     "runtime"
     "path/filepath"
     "strings"
@@ -14,6 +18,7 @@ type HtmlRequest struct {
     headers map[string]string
     content string
 }
+
 type HtmlResponse struct {
     version, code, msg string
     headers map[string]string
@@ -39,6 +44,14 @@ func (res HtmlResponse) build() []byte {
     return []byte(builder.String())
 }
 
+type FileCacheEntry struct {
+    last_modified time.Time
+    last_sha256 [sha256.Size]byte
+}
+type FilePath = string
+type FileCache = map[FilePath]FileCacheEntry
+
+
 const(
     SERVER_ADDR = "localhost:13123"
     FILE_NOTFOUND = "HTTP/1.1 404 Not Found\r\nDate: Wed, 10 Oct 2023 00:16:00 GMT\r\nContent-Length: 230\r\nConnection: Closed\r\nContent-Type: text/html; charset=iso-8859-1\r\n\r\n<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html>\n<head>\n   <title>404 Not Found</title>\n</head>\n<body>\n   <h1>Not Found</h1>\n   <p>The requested URL /t.html was not found on this server.</p>\n</body>\n</html>\n"
@@ -63,6 +76,7 @@ var(
         content: nil,
     }
     path_seperator string
+    files_cache = make(FileCache)
 )
 
 func main() {
@@ -88,6 +102,9 @@ func main() {
     defer server.Close()
     fmt.Println("Server on:", server.Addr().String())
     fmt.Println("Start listening...")
+
+    ch := make(chan string)
+    go update_cache_files(ch)
     start_browser("http://127.0.0.1:13123/")
     for {
         client, err := server.Accept()
@@ -95,7 +112,7 @@ func main() {
             fmt.Fprintln(os.Stderr, "[ERROR] accepting client: ", err.Error())
             continue
         }
-        go process_client(client)
+        go process_client(ch, client)
     }
 
 }
@@ -175,7 +192,48 @@ func get_file_content(file_path string) []byte {
     return content
 }
 
-func process_client(client net.Conn) {
+func get_last_modified(file_path string) *time.Time {
+    file, err := os.Open(file_path)
+    if err != nil {
+        return nil
+    }
+    defer file.Close()
+    info, err := file.Stat()
+    assert(err == nil, "[ERROR] Can't stat file " + file_path)
+    result := new(time.Time)
+    *result = info.ModTime()
+    return result
+}
+
+func update_cache_files(ch chan string) {
+    for {
+        select {
+        case x, ok := <-ch:
+            if ok {
+                files_cache[x] = FileCacheEntry{}
+            } else {
+                fmt.Println("Channel closed!")
+            }
+        default:
+        }
+        for k, v := range files_cache {
+            last_modified := get_last_modified(k)
+            if last_modified != nil && !v.last_modified.Equal(*last_modified) {
+                v.last_modified = *last_modified
+                new_sha256 := sha256.Sum256(get_file_content(k))
+                if new_sha256 != v.last_sha256 {
+                    v.last_sha256 = new_sha256
+                    // TODO: reload
+                    fmt.Printf("[INFO] Updated sha256 for file %s\n", k)
+                }
+                files_cache[k] = v
+                fmt.Printf("[INFO] Updated modified time for file %s\n", k)
+            }
+        }
+    }
+}
+
+func process_client(ch chan string, client net.Conn) {
     buffer := make([]byte, 1024)
     n, err := client.Read(buffer)
     assert(err == nil, "[ERROR] Can't read from client")
@@ -187,12 +245,17 @@ func process_client(client net.Conn) {
         if request.file_path == "/" { file_path += path_seperator + entry_file } else { file_path += request.file_path }
         response := basic_get_file_response
         file_content := get_file_content(file_path)
+        if _, found := files_cache[file_path]; !found {
+            ch <- file_path
+        }
         if file_content != nil {
             response.headers["content-type"] = content_types[filepath.Ext(file_path)]
             response.headers["content-length"] = string(len(file_content))
             response.content = file_content
             client.Write(response.build())
             fmt.Printf("[INFO] Send file `%s` %d bytes to client\n", file_path, len(file_content))
+        } else {
+            client.Write([]byte(FILE_NOTFOUND))
         }
     default:
         fmt.Println("Unimplemented")
