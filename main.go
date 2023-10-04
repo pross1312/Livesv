@@ -1,6 +1,7 @@
 package main
-
+// TODO: auto reload
 import(
+    "runtime"
     "path/filepath"
     "strings"
     "os"
@@ -61,9 +62,16 @@ var(
         },
         content: nil,
     }
+    path_seperator string
 )
 
 func main() {
+    switch runtime.GOOS {
+    case "windows":
+        path_seperator = "\\"
+    default:
+        path_seperator = "/"
+    }
     if len(os.Args) <= 1 {
         fmt.Println("USAGE: progname `html file`") 
         os.Exit(1)
@@ -80,6 +88,7 @@ func main() {
     defer server.Close()
     fmt.Println("Server on:", server.Addr().String())
     fmt.Println("Start listening...")
+    start_browser("http://127.0.0.1:13123/")
     for {
         client, err := server.Accept()
         if err != nil {
@@ -89,6 +98,27 @@ func main() {
         go process_client(client)
     }
 
+}
+
+func start_browser(addr string) {
+    switch runtime.GOOS {
+    case "windows":
+        fmt.Fprintln(os.Stderr, "[ERROR] Unsupported platform")
+        os.Exit(1)
+    case "darwin":
+        fmt.Fprintln(os.Stderr, "[ERROR] Unsupported platform")
+        os.Exit(1)
+    case "linux":
+        var proc_attr *os.ProcAttr = new(os.ProcAttr)
+        _, err := os.StartProcess("/usr/bin/xdg-open", []string{"/usr/bin/xdg-open", addr}, proc_attr) // start default broser
+        if err != nil {
+            fmt.Fprintf(os.Stderr, "[ERROR] Can't start xdg-open, error: %s\n", err.Error())
+            os.Exit(1)
+        }
+    default:
+        fmt.Fprintln(os.Stderr, "[ERROR] Unsupported platform")
+        os.Exit(1)
+    }
 }
 
 func (req HtmlRequest) print() {
@@ -154,7 +184,7 @@ func process_client(client net.Conn) {
     case "GET":
         fmt.Printf("[INFO] Client request for `%s`\n", request.file_path)
         file_path := root_dir
-        if request.file_path == "/" { file_path += "/" + entry_file } else { file_path += request.file_path }
+        if request.file_path == "/" { file_path += path_seperator + entry_file } else { file_path += request.file_path }
         response := basic_get_file_response
         file_content := get_file_content(file_path)
         if file_content != nil {
