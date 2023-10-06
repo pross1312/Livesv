@@ -1,19 +1,21 @@
 package main
-// TODO: auto reload [ ]
+// TODO: auto reload [x]
 //       TODO: learn websocket [x]
-//       TODO: inject code into html entry file to run websocket [ ]
-// TODO: CLEAN UP THIS DUMP MESS T_T
+//       TODO: inject code into html entry file to run websocket [x]
+// TODO: maybe figure out why golang/sha256.Sum256 not working properpy (or maybe os.ReadFile not working) [ ]
+// TODO: CLEAN UP THIS DUMP MESS T_T [ ]
 import(
     "sync/atomic"
     "strconv"
     "time"
     "encoding/base64"
-    "crypto/sha256"
+    // "crypto/sha256"
     "crypto/sha1"
     "runtime"
     "path/filepath"
     "strings"
     "os"
+    "os/exec"
     "fmt"
     "net"
 )
@@ -59,16 +61,36 @@ func (res HttpResponse) build() []byte {
 
 type FileCacheEntry struct {
     last_modified time.Time
-    last_hash [sha256.Size]byte
+    last_hash string
 }
 type FilePath = string
 type FileCache = map[FilePath]FileCacheEntry
 
-
 const (
+    WEBSOCKET_INJECT_CODE = `
+    <script>
+        if ('WebSocket' in window) {
+            let protocol = window.location.protocol === "http:" ? "ws://" : "wss://"
+            let address = protocol + "localhost:9999"
+            let socket = new WebSocket(address)
+            socket.onmessage = function(msg) {
+                if (msg.data === "RELOAD") {
+                    window.location.reload()
+                    console.log("RELOADED")
+                }
+                else {
+                    console.log("Unhandled")
+                    console.log(msg)
+                }
+            }
+        }
+        else {
+            alert("Browser does not support web socket, can't hotreload")
+        }
+    </script>
+`
     SERVER_ADDR = "localhost:13123"
     TEST_FILE_PATH = "/home/dvtuong/programming/odin-project/index.html"
-    OK_GET_FILE_FORMAT = "HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: Closed\r\nContent-Type: text/html; charset=iso-8859-1\r\n\r\n%s"
     FILE_NOTFOUND_PAYLOAD = "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html>\n<head>\n   <title>404 Not Found</title>\n</head>\n<body>\n   <h1>Not Found</h1>\n   <p>The requested URL /t.html was not found on this server.</p>\n</body>\n</html>\n"
 )
 
@@ -247,18 +269,20 @@ func update_cache_files(ch chan string) {
         for k, v := range files_cache {
             last_modified := get_last_modified(k)
             if last_modified != nil && !v.last_modified.Equal(*last_modified) {
-                new_hash := sha256.Sum256(get_file_content(k))
+                out, err := exec.Command("sha256sum", k).Output()
+                assert(err == nil)
+                out_str := string(out)
+                new_hash := out_str[:strings.Index(out_str, "  ")]
                 if new_hash != v.last_hash {
-                    fmt.Printf("%x\n", new_hash)
-                    fmt.Printf("%x\n", v.last_hash)
-                    if has_websocket.Load() { websocket_channel <- "RELOAD" }
+                    fmt.Printf("%s\n", new_hash)
+                    fmt.Printf("%s\n", v.last_hash)
+                    if v.last_hash != "" && has_websocket.Load() { websocket_channel <- "RELOAD" } // reload if web socket is ready and not first time add file to cache
                     fmt.Printf("[INFO] Updated sha512 for file %s\n", k)
                 }
                 files_cache[k] = FileCacheEntry{
                     last_modified: *last_modified,
                     last_hash: new_hash,
                 }
-                fmt.Printf("[INFO] Updated modified time for file %s\n", k)
             }
         }
     }
@@ -343,20 +367,24 @@ func websocket_server(address string, msg_ch chan string) {
         has_websocket.Store(true)
         for {
             msg := <-msg_ch
-            n, err := client.Write(build_websocket_frame_msg(msg))
-            if err != nil {
-                fmt.Fprintf(os.Stderr, "[WARN] Can't send %s to client, error: %s\n", msg, err.Error())
-                fmt.Println("[INFO] Web socket shut down")
-                has_websocket.Store(false)
-                break
-            }
-            fmt.Printf("[INFO] Sent message `%s`, %d bytes to client", msg, n)
-            if msg == "RELOAD" {
+            if msg == "CLOSE" {
+                break;
+            } else if msg == "RELOAD" {
+                client.Write(build_websocket_frame_msg(msg))
+                fmt.Printf("[INFO] Sent message `%s` to client\n", msg, n)
                 break
             }
         }
         has_websocket.Store(false)
+        fmt.Println("[INFO] Web socket closed")
     }
+}
+
+func inject_websocket(file_content []byte) []byte {
+    content_str := string(file_content)
+    end_html_tag_index := strings.LastIndex(content_str, "</html>")
+    assert(end_html_tag_index != -1, "Write some proper html bro -_-")
+    return []byte(content_str[:end_html_tag_index] + WEBSOCKET_INJECT_CODE + content_str[end_html_tag_index:])
 }
 
 func process_client(ch chan string, client net.Conn) {
@@ -371,14 +399,20 @@ func process_client(ch chan string, client net.Conn) {
         file_path := root_dir
         if request.file_path == "/" { file_path += path_seperator + entry_file } else { file_path += request.file_path }
         file_content := get_file_content(file_path)
-        if _, found := files_cache[file_path]; !found {
-            ch <- file_path
-        }
         if file_content != nil {
+            if _, found := files_cache[file_path]; !found {
+                ch <- file_path
+                if has_websocket.Load() { websocket_channel <- "CLOSE" }
+            }
             response = basic_get_file_response
-            response.headers["Content-type"] = content_types[filepath.Ext(file_path)]
+            file_ext := filepath.Ext(file_path)
+            response.headers["Content-type"] = content_types[file_ext]
             response.headers["Content-Length"] = strconv.Itoa(len(file_content))
             response.content = file_content
+            if file_ext == ".html" {
+                response.headers["Content-Length"] = strconv.Itoa(len(file_content) + len(WEBSOCKET_INJECT_CODE))
+                response.content = inject_websocket(file_content)
+            }
             fmt.Printf("[INFO] Send file `%s` %d bytes to client\n", file_path, len(file_content))
         } else {
             response = FILE_NOTFOUND
