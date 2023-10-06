@@ -8,7 +8,7 @@ import(
     "strconv"
     "time"
     "encoding/base64"
-    "crypto/sha512"
+    "crypto/sha256"
     "crypto/sha1"
     "runtime"
     "path/filepath"
@@ -59,7 +59,7 @@ func (res HttpResponse) build() []byte {
 
 type FileCacheEntry struct {
     last_modified time.Time
-    last_sha512 [sha512.Size]byte
+    last_hash [sha256.Size]byte
 }
 type FilePath = string
 type FileCache = map[FilePath]FileCacheEntry
@@ -247,14 +247,17 @@ func update_cache_files(ch chan string) {
         for k, v := range files_cache {
             last_modified := get_last_modified(k)
             if last_modified != nil && !v.last_modified.Equal(*last_modified) {
-                v.last_modified = *last_modified
-                new_sha512 := sha512.Sum512(get_file_content(k))
-                if new_sha512 != v.last_sha512 {
-                    v.last_sha512 = new_sha512
+                new_hash := sha256.Sum256(get_file_content(k))
+                if new_hash != v.last_hash {
+                    fmt.Printf("%x\n", new_hash)
+                    fmt.Printf("%x\n", v.last_hash)
                     if has_websocket.Load() { websocket_channel <- "RELOAD" }
                     fmt.Printf("[INFO] Updated sha512 for file %s\n", k)
                 }
-                files_cache[k] = v
+                files_cache[k] = FileCacheEntry{
+                    last_modified: *last_modified,
+                    last_hash: new_hash,
+                }
                 fmt.Printf("[INFO] Updated modified time for file %s\n", k)
             }
         }
@@ -348,6 +351,9 @@ func websocket_server(address string, msg_ch chan string) {
                 break
             }
             fmt.Printf("[INFO] Sent message `%s`, %d bytes to client", msg, n)
+            if msg == "RELOAD" {
+                break
+            }
         }
         has_websocket.Store(false)
     }
