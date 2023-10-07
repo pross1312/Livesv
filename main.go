@@ -2,9 +2,11 @@ package main
 // TODO: auto reload [x]
 //       TODO: learn websocket [x]
 //       TODO: inject code into html entry file to run websocket [x]
-// TODO: maybe figure out why golang/sha256.Sum256 not working properpy (or maybe os.ReadFile not working) [ ]
 // TODO: CLEAN UP THIS DUMP MESS T_T [ ]
+// TODO: don't reload when unrelated files get editted [ ]
+// TODO: maybe figure out why golang/sha256.Sum256 not working properpy (or maybe os.ReadFile not working) [ ]
 import(
+    "log"
     "sync/atomic"
     "strconv"
     "time"
@@ -71,7 +73,7 @@ const (
     <script>
         if ('WebSocket' in window) {
             let protocol = window.location.protocol === "http:" ? "ws://" : "wss://"
-            let address = protocol + "localhost:9999"
+            let address = protocol + window.location.host + window.location.pathname
             let socket = new WebSocket(address)
             socket.onmessage = function(msg) {
                 if (msg.data === "RELOAD") {
@@ -122,7 +124,7 @@ var (
     }
     path_seperator string
     files_cache = make(FileCache)
-    websocket_channel = make(chan string)
+    websocket_channel, file_cache_channel = make(chan string), make(chan string)
     default_browser_opener string
     has_websocket atomic.Bool
 )
@@ -158,16 +160,14 @@ func main() {
         os.Exit(1)
     }
 
-    ch := make(chan string)
-    go update_cache_files(ch)
-    go websocket_server("localhost:9999", websocket_channel)
+    go update_cache_files(file_cache_channel)
     for {
         client, err := server.Accept()
         if err != nil {
             fmt.Fprintln(os.Stderr, "[ERROR] accepting client: ", err.Error())
             continue
         }
-        go process_client(ch, client)
+        go handle_client(client)
     }
 
 }
@@ -339,47 +339,6 @@ func build_websocket_frame_msg(msg string) []byte {
     return nil
 }
 
-func websocket_server(address string, msg_ch chan string) {
-    var _ int64
-    server, err := net.Listen("tcp", address)
-    if err != nil {
-        fmt.Fprintf(os.Stderr, "[ERROR Web socket server] Can't create server, %s\n", err.Error())
-        os.Exit(1)
-    }
-    defer server.Close()
-    for {
-        client, err := server.Accept()
-        if err != nil {
-            fmt.Fprintln(os.Stderr, "[ERROR Web socket server] accepting client: ", err.Error())
-            os.Exit(1)
-        }
-        defer client.Close()
-        // handshake
-        buffer := make([]byte, 1024)
-        n, err := client.Read(buffer)
-        assert(err == nil, "[ERROR] Can't read from client")
-        request := parse_request(string(buffer[:n]))
-        if key, found := request.headers["Sec-WebSocket-Key"]; found {
-            response := build_websocket_accept(key)
-            client.Write(response.build())
-        }
-        fmt.Println("[INFO] Web socket successfully connected")
-        has_websocket.Store(true)
-        for {
-            msg := <-msg_ch
-            if msg == "CLOSE" {
-                break;
-            } else if msg == "RELOAD" {
-                client.Write(build_websocket_frame_msg(msg))
-                fmt.Printf("[INFO] Sent message `%s` to client\n", msg, n)
-                break
-            }
-        }
-        has_websocket.Store(false)
-        fmt.Println("[INFO] Web socket closed")
-    }
-}
-
 func inject_websocket(file_content []byte) []byte {
     content_str := string(file_content)
     end_html_tag_index := strings.LastIndex(content_str, "</html>")
@@ -387,11 +346,27 @@ func inject_websocket(file_content []byte) []byte {
     return []byte(content_str[:end_html_tag_index] + WEBSOCKET_INJECT_CODE + content_str[end_html_tag_index:])
 }
 
-func process_client(ch chan string, client net.Conn) {
-    buffer := make([]byte, 1024)
-    n, err := client.Read(buffer)
-    assert(err == nil, "[ERROR] Can't read from client")
-    request := parse_request(string(buffer[:n]))
+
+func handle_websocket(client net.Conn, request *HttpRequest) {
+    response := build_websocket_accept(request.headers["Sec-WebSocket-Key"])
+    client.Write(response.build())
+    fmt.Println("[INFO] Successfully connected")
+    for {
+        msg := <-websocket_channel
+        if msg == "CLOSE" {
+            _, err := client.Write([]byte{0b10000000 | 0x8, 0})
+            check_err(err, false, "Can't send quit message")
+            fmt.Println("[INFO] Send `quit` message to client")
+            break;
+        } else if msg == "RELOAD" {
+            n, err := client.Write(build_websocket_frame_msg(msg))
+            check_err(err, false, "[INFO] Can't send message")
+            fmt.Printf("[INFO] Sent message `%s` to client\n", msg, n)
+        }
+    }
+}
+
+func handle_http(client net.Conn, request *HttpRequest) {
     switch request.req_type {
     case "GET":
         var response HttpResponse
@@ -401,8 +376,7 @@ func process_client(ch chan string, client net.Conn) {
         file_content := get_file_content(file_path)
         if file_content != nil {
             if _, found := files_cache[file_path]; !found {
-                ch <- file_path
-                if has_websocket.Load() { websocket_channel <- "CLOSE" }
+                file_cache_channel <- file_path
             }
             response = basic_get_file_response
             file_ext := filepath.Ext(file_path)
@@ -422,5 +396,40 @@ func process_client(ch chan string, client net.Conn) {
         fmt.Println("Unimplemented")
         os.Exit(1)
     }
+}
+
+func handle_client(client net.Conn) {
+    buffer := make([]byte, 1024)
+    n, err := client.Read(buffer)
+    assert(err == nil, "[ERROR] Can't read from client")
+    request := parse_request(string(buffer[:n]))
+    if request.headers["Connection"] == "Upgrade" && request.headers["Upgrade"] == "websocket" {
+        if has_websocket.Load() {
+            websocket_channel <- "CLOSE"
+            for has_websocket.Load() {}
+        }
+        has_websocket.Store(true)
+        handle_websocket(client, &request)
+        has_websocket.Store(false)
+    } else {
+        handle_http(client, &request)
+    }
+    fmt.Println("[INFO] Client closed")
     client.Close()
+}
+
+func check_err(err error, fatal bool, info ...string) bool {
+    if err != nil {
+        var msg_builder strings.Builder
+        if fatal { msg_builder.WriteString("[ERROR] ") } else { msg_builder.WriteString("[WARNING] ") }
+        msg_builder.WriteString(err.Error())
+        msg_builder.WriteString("\n")
+        for _, v := range info {
+            msg_builder.WriteString("\t [INFO] ")
+            msg_builder.WriteString(v)
+        }
+        if fatal { log.Fatalln(msg_builder.String()) } else { log.Println(msg_builder.String()) }
+        return true;
+    }
+    return false;
 }
