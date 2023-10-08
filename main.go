@@ -4,7 +4,8 @@ package main
 //       TODO: inject code into html entry file to run websocket [x]
 // TODO: CLEAN UP THIS DUMP MESS T_T [x]
 // TODO: maybe figure out why golang/sha256.Sum256 not working properpy (or maybe os.ReadFile not working) [x] -> os.ReadFile not working properly when program is writing to that file
-// TODO: don't reload when unrelated files get editted [ ]
+// TODO: don't reload when unrelated files get editted [x]
+// TODO: auto reload if `back button` get pressed (this does not trigger a GET request from client) [ ]
 import(
     http "livesv/HttpPackage"
     cache "livesv/FileCache"
@@ -51,6 +52,7 @@ var (
     websocket_channel, file_cache_channel = make(chan string), make(chan string)
     default_browser_opener string
     has_websocket atomic.Bool
+    html_related_files = make([]string, 0, 10) // avoid reload when unrelated to current html file was edited
 )
 
 func main() {
@@ -77,8 +79,13 @@ func main() {
                                      fmt.Sprintf("http://%s/", SERVER_ADDR)}, proc_attr) // start default broser
     Check_err(err, true, "Can't start `%s`\n", default_browser_opener)
 
-    go cache.Update_cache_files(file_cache_channel, func(_ string) {
-        if has_websocket.Load() { websocket_channel <- "RELOAD" }
+    go cache.Update_cache_files(file_cache_channel, func(file_path string) {
+        for _, v := range html_related_files {
+            if file_path == v && has_websocket.Load() {
+                websocket_channel <- "RELOAD"
+                return
+            }
+        }
     })
     for {
         client, err := server.Accept()
@@ -150,10 +157,12 @@ func handle_http(client net.Conn, request *http.HttpRequest) {
             response.Headers["Content-Length"] = strconv.Itoa(len(file_content))
             response.Content = file_content
             if file_ext == ".html" {
+                html_related_files = html_related_files[:0]
                 response.Headers["Content-Length"] = strconv.Itoa(len(file_content) + len(WEBSOCKET_INJECT_CODE))
                 response.Content = inject_websocket(file_content)
             }
             fmt.Printf("[INFO] Send file `%s` %d bytes to client\n", file_path, len(file_content))
+            html_related_files = append(html_related_files, file_path)
         } else {
             response = http.FILE_NOTFOUND
         }
