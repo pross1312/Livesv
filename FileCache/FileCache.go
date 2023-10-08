@@ -53,20 +53,15 @@ func Get_sha256(file_path string) string {
     return hex.EncodeToString(sum[:])
 }
 
-func Is_cached(file_path string) bool {
-    if _, found := files_cache[file_path]; found {
-        return true
-    }
-    return false
-}
-
-func Update_cache_files(ch chan string, on_file_change func(file_path string)) {
+func Update_cache_files(ch chan string, on_file_change func(string)) {
     for {
         select {
-        case x, ok := <-ch:
+        case file_path, ok := <-ch:
             if ok {
-                files_cache[x] = FileCacheEntry{}
-                fmt.Printf("[INFO] Cache file `%s`\n", x)
+                if _, found := files_cache[file_path]; !found {
+                    files_cache[file_path] = FileCacheEntry{} 
+                    fmt.Printf("[INFO] Cache file `%s`\n", file_path)
+                }
             } else {
                 fmt.Println("[INFO] Channel closed!")
             }
@@ -86,6 +81,6 @@ func Update_cache_files(ch chan string, on_file_change func(file_path string)) {
                 }
             }
         }
-        time.Sleep(200)
+        time.Sleep(100)
     }
 }

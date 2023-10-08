@@ -28,7 +28,7 @@ const (
             let address = protocol + window.location.host + window.location.pathname
             let socket = new WebSocket(address)
             socket.onmessage = function(msg) {
-                if (msg.data === RELOAD_MSG) {
+                if (msg.data === "RELOAD") {
                     window.location.reload()
                     console.log("RELOADED")
                 }
@@ -74,9 +74,9 @@ func main() {
 
     // open in browser
     var proc_attr *os.ProcAttr = new(os.ProcAttr)
-    _, err = os.StartProcess(default_browser_opener,
-                            []string{default_browser_opener,
-                                     fmt.Sprintf("http://%s/", SERVER_ADDR)}, proc_attr) // start default broser
+    _, err = os.StartProcess(default_browser_opener, // start default broser
+                            []string{default_browser_opener, fmt.Sprintf("http://%s/", SERVER_ADDR)},
+                            proc_attr)
     Check_err(err, true, "Can't start `%s`\n", default_browser_opener)
 
     go cache.Update_cache_files(file_cache_channel, func(file_path string) {
@@ -170,7 +170,7 @@ func handle_http(client net.Conn, request *http.HttpRequest) {
         if request.File_path == "/" { file_path += path_seperator + entry_file } else { file_path += request.File_path }
         file_content := cache.Get_file_content(file_path)
         if file_content != nil {
-            if !cache.Is_cached(file_path) { file_cache_channel <- file_path }
+            file_cache_channel <- file_path // add to cache system if it's not already cached
             response = http.BASIC_GET_FILE_RESPONSE
             file_ext := filepath.Ext(file_path)
             response.Headers["Content-type"] = http.CONTENT_TYPES[file_ext]
