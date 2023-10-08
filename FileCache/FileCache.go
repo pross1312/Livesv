@@ -2,11 +2,10 @@
 package FileCache
 
 import (
-    "strings"
+    "encoding/hex"
     "time"
     "fmt"
     "os"
-    "os/exec"
     "crypto/sha256"
 )
 
@@ -19,7 +18,6 @@ type FileCache = map[FilePath]FileCacheEntry
 
 var (
     files_cache = make(FileCache)
-    use_sha256_pack = false
 )
 
 func Get_last_modified(file_path string) *time.Time {
@@ -37,28 +35,22 @@ func Get_last_modified(file_path string) *time.Time {
 }
 
 func Get_file_content(file_path string) []byte {
+    cannot_read_tolerance := 100 // for cases like when a program is writing to that file
+    count := 0
     content, err := os.ReadFile(file_path)
+    for count < cannot_read_tolerance && err != nil && os.IsNotExist(err) || len(content) == 0 {
+        content, err = os.ReadFile(file_path)
+    }
     if err != nil {
-        fmt.Fprintf(os.Stderr, "[ERROR] Can't read file %s\n", file_path)
+        fmt.Fprintf(os.Stderr, "[ERROR] %s\n\t[INFO] %s %s\n", err.Error(), "Can't read file", file_path)
         return nil
     }
     return content
 }
 
 func Get_sha256(file_path string) string {
-    var out []byte
-    var err error
-    if !use_sha256_pack {
-        out, err = exec.Command("sha256sum", file_path).Output()
-        if err != nil {
-            fmt.Println("[ERROR] No command sha256sum found, switch to dump version sha256 package")
-            use_sha256_pack = true
-        }
-    } else {
-        temp := sha256.Sum256(Get_file_content(file_path))
-        out = temp[:]
-    }
-    return string(out)
+    sum := sha256.Sum256(Get_file_content(file_path))
+    return hex.EncodeToString(sum[:])
 }
 
 func Is_cached(file_path string) bool {
@@ -83,8 +75,7 @@ func Update_cache_files(ch chan string, on_file_change func(file_path string)) {
         for file_path, entry := range files_cache {
             last_modified := Get_last_modified(file_path)
             if last_modified != nil && !entry.last_modified.Equal(*last_modified) {
-                out_str := Get_sha256(file_path)
-                new_hash := out_str[:strings.Index(out_str, "  ")]
+                new_hash := Get_sha256(file_path)
                 if new_hash != entry.last_hash {
                     if entry.last_hash != "" { on_file_change(file_path) }
                     fmt.Printf("[INFO] Updated sha512 for file %s\n", file_path)
@@ -95,5 +86,6 @@ func Update_cache_files(ch chan string, on_file_change func(file_path string)) {
                 }
             }
         }
+        time.Sleep(200)
     }
 }

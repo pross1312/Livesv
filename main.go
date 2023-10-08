@@ -3,8 +3,8 @@ package main
 //       TODO: learn websocket [x]
 //       TODO: inject code into html entry file to run websocket [x]
 // TODO: CLEAN UP THIS DUMP MESS T_T [x]
+// TODO: maybe figure out why golang/sha256.Sum256 not working properpy (or maybe os.ReadFile not working) [x] -> os.ReadFile not working properly when program is writing to that file
 // TODO: don't reload when unrelated files get editted [ ]
-// TODO: maybe figure out why golang/sha256.Sum256 not working properpy (or maybe os.ReadFile not working) [ ]
 import(
     http "livesv/HttpPackage"
     cache "livesv/FileCache"
