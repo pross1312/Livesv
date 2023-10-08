@@ -4,6 +4,6 @@ Live server written in [Go](https://go.dev/), inspired by [vscode](https://code.
 ## Quick start
 
 ```console
-$ go build main.go
-$ ./main `html file path`
+$ go build .
+$ ./livesv `html file path`
 ```
