@@ -17,7 +17,7 @@ type HttpRequest struct {
     Headers map[string]string
     Content string
 }
-func Parse_request(request string) HttpRequest {
+func Parse_request(request string) *HttpRequest {
     result := new_request()
     // parse first line (type, file, msg)
     end := strings.Index(request, "\r\n")
@@ -47,8 +47,8 @@ func Parse_request(request string) HttpRequest {
     result.Content = request[end+2:]
     return result
 }
-func new_request() HttpRequest {
-    var req HttpRequest
+func new_request() *HttpRequest {
+    var req = new(HttpRequest)
     req.Headers = make(map[string]string)
     return req
 }

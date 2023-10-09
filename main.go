@@ -221,10 +221,10 @@ func handle_client(client net.Conn) {
             for has_websocket.Load() {}
         }
         has_websocket.Store(true)
-        handle_websocket(client, &request)
+        handle_websocket(client, request)
         has_websocket.Store(false)
     } else {
-        handle_http(client, &request)
+        handle_http(client, request)
     }
     fmt.Println("[INFO] Client closed")
 }

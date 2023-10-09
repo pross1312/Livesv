@@ -44,7 +44,7 @@ func (res HttpResponse) print() {
     fmt.Printf("-----------------------------------------------\n%s\n", res.Content)
 }
 
-func (res HttpResponse) Build() []byte {
+func (res *HttpResponse) Build() []byte {
     var builder strings.Builder
     builder.WriteString(res.Version)
     builder.WriteString(" ")
