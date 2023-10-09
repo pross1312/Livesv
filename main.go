@@ -73,15 +73,19 @@ var (
 )
 
 func main() {
-    os_independent_set_args()
     if len(os.Args) <= 1 {
         fmt.Println("USAGE: progname `html file`") 
         os.Exit(1)
     }
+    if _, err := os.Stat(os.Args[1]); err != nil {
+        Check_err(err, true, fmt.Sprintf("`%s` not found.", os.Args[1]))
+    }
+    os_independent_set_args()
     root_dir = filepath.Dir(os.Args[1])
     entry_file = filepath.Base(os.Args[1])
     fmt.Printf("[INFO] Start server with file `%s`\n", entry_file)
     fmt.Printf("[INFO] Root directory `%s`\n", root_dir)
+
     server, err := net.Listen("tcp", SERVER_ADDR)
     Check_err(err, true, "[INFO] Can't create server")
     defer server.Close()
@@ -107,6 +111,7 @@ func main() {
         }
     })
     for {
+        fmt.Printf("[INFO] Number of goroutines: %d\n", runtime.NumGoroutine())
         client, err := server.Accept()
         if Check_err(err, false, "Can't accep client") { continue }
         go handle_client(client)

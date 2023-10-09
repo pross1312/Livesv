@@ -43,7 +43,7 @@ func Get_file_content(file_path string) []byte {
         count++
     }
     if err != nil {
-        fmt.Fprintf(os.Stderr, "[ERROR] %s\n\t[INFO] %s %s\n", err.Error(), "Can't read file", file_path)
+        fmt.Fprintf(os.Stderr, "[WARNING] %s\n\t[INFO] %s %s\n", err.Error(), "Can't read file", file_path)
         return nil
     }
     return content
@@ -82,6 +82,6 @@ func Update_cache_files(ch chan string, on_file_change func(string)) {
                 }
             }
         }
-        time.Sleep(100)
+        time.Sleep(200)
     }
 }
