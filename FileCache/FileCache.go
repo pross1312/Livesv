@@ -43,7 +43,7 @@ func Get_file_content(file_path string) []byte {
         count++
     }
     if err != nil {
-        fmt.Fprintf(os.Stderr, "[WARNING] %s\n\t[INFO] %s %s\n", err.Error(), "Can't read file", file_path)
+        fmt.Fprintf(os.Stdout, "[WARNING] %s\n\t[INFO] %s %s\n", err.Error(), "Can't read file", file_path)
         return nil
     }
     return content
