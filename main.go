@@ -24,6 +24,16 @@ const (
     WEBSOCKET_INJECT_CODE = `
     <script>
         if ('WebSocket' in window) {
+            function refreshCSS() {
+				var sheets = [].slice.call(document.getElementsByTagName("link"));
+				var head = document.getElementsByTagName("head")[0];
+				for (var i = 0; i < sheets.length; ++i) {
+					var elem = sheets[i];
+					var parent = elem.parentElement || head;
+					parent.removeChild(elem);
+					parent.appendChild(elem);
+				}
+			}
             let protocol = window.location.protocol === "http:" ? "ws://" : "wss://"
             let address = protocol + window.location.host + window.location.pathname
             let socket = new WebSocket(address)
@@ -31,6 +41,10 @@ const (
                 if (msg.data === "RELOAD") {
                     window.location.reload()
                     console.log("RELOADED")
+                }
+                else if (msg.data === "RELOAD_CSS") {
+                    refreshCSS()
+                    console.log("CSS RELOADED")
                 }
                 else {
                     console.log("Unhandled")
@@ -45,6 +59,7 @@ const (
 `
     SERVER_ADDR = "localhost:13123"
     RELOAD_MSG = "RELOAD"
+    RELOAD_CSS_MSG = "RELOAD_CSS"
 )
 
 var (
@@ -82,7 +97,8 @@ func main() {
     go cache.Update_cache_files(file_cache_channel, func(file_path string) {
         for _, v := range html_related_files {
             if file_path == v && has_websocket.Load() {
-                websocket_channel <- RELOAD_MSG
+                if filepath.Ext(file_path) == ".css" { websocket_channel <- RELOAD_CSS_MSG } else { websocket_channel <- RELOAD_MSG }
+                // websocket_channel <- RELOAD_MSG
                 return
             }
         }
@@ -152,10 +168,10 @@ func handle_websocket(client net.Conn, request *http.HttpRequest) {
                 fmt.Println("[INFO] Send `quit` message to client")
             }
             break;
-        } else if msg == RELOAD_MSG {
+        } else {
             _, err := client.Write(ws.Build_websocket_frame_msg(msg))
             if !Check_err(err, false, "Can't send message") {
-                fmt.Printf("[INFO] Sent message `%s` to client\n", RELOAD_MSG)
+                fmt.Printf("[INFO] Sent message `%s` to client\n", msg)
             }
         }
     }
