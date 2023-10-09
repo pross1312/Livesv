@@ -38,8 +38,9 @@ func Get_file_content(file_path string) []byte {
     cannot_read_tolerance := 100 // for cases like when a program is writing to that file
     count := 0
     content, err := os.ReadFile(file_path)
-    for count < cannot_read_tolerance && err != nil && os.IsNotExist(err) || len(content) == 0 {
+    for count < cannot_read_tolerance && (err != nil && os.IsNotExist(err) || len(content) == 0) {
         content, err = os.ReadFile(file_path)
+        count++
     }
     if err != nil {
         fmt.Fprintf(os.Stderr, "[ERROR] %s\n\t[INFO] %s %s\n", err.Error(), "Can't read file", file_path)
