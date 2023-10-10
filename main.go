@@ -7,6 +7,7 @@ package main
 // TODO: don't reload when unrelated files get editted [x]
 // TODO: auto reload if `back button` get pressed (this does not trigger a GET request from client) [x]
 import(
+    "sync"
     "slices"
     http "livesv/HttpPackage"
     cache "livesv/FileCache"
@@ -71,8 +72,10 @@ var (
     websocket_channel, file_cache_channel = make(chan string), make(chan string)
     default_browser_opener string
     has_websocket atomic.Bool
-    html_on_wait_reload = make([]string, 0, 10) // to handle `back button` reloading
-    html_related_files = make(map[string][]string)
+    files_on_wait_reload = make([]string, 0, 10) // to handle `back button` reloading
+    related_files = make(map[string][]string)
+    related_files_mutex sync.Mutex
+    files_on_wait_mutex sync.Mutex
 )
 
 func main() {
@@ -112,14 +115,20 @@ func main() {
 
 func on_file_change(file_path string) {
     if !has_websocket.Load() { return }
-    if index := slices.Index(html_related_files[current_html], file_path); index != -1 {
+    related_files_mutex.Lock()
+    if index := slices.Index(related_files[current_html], file_path); index != -1 {
         if filepath.Ext(file_path) == ".css" { websocket_channel <- RELOAD_CSS_MSG } else { websocket_channel <- RELOAD_MSG }
+        related_files_mutex.Unlock()
         return
     }
-    if filepath.Ext(file_path) == ".html" { // html file is edited but not the current displaying one
-        html_on_wait_reload = append(html_on_wait_reload, file_path)
-        fmt.Println("[INFO] Add `%s` to list of waiting to update files\n", file_path)
+    related_files_mutex.Unlock()
+    // file is edited but not the currently in use
+    files_on_wait_mutex.Lock()
+    if index := slices.Index(files_on_wait_reload, file_path); index == -1 {
+        files_on_wait_reload = append(files_on_wait_reload, file_path)
+        fmt.Printf("[INFO] Add `%s` to list of waiting to update files\n", file_path)
     }
+    files_on_wait_mutex.Unlock()
 }
 
 func os_independent_set_args() {
@@ -151,7 +160,6 @@ func inject_websocket(file_path string, file_content []byte) []byte {
     return []byte(content_str[:end_html_tag_index] + WEBSOCKET_INJECT_CODE + content_str[end_html_tag_index:])
 }
 
-
 func handle_websocket(client net.Conn, request *http.HttpRequest) {
     response := ws.Build_websocket_accept(request.Headers["Sec-WebSocket-Key"])
     fmt.Println("[INFO] Successfully connected")
@@ -162,17 +170,34 @@ func handle_websocket(client net.Conn, request *http.HttpRequest) {
         fmt.Printf("[INFO] Change to `%s`\n", file_path)
         current_html = file_path
     }
-    for i, v := range html_on_wait_reload {
-        if v == file_path {
-            _, err := client.Write(ws.Build_websocket_frame_msg(RELOAD_MSG))
-            if !Check_err(err, false, "Can't send message") {
-                fmt.Printf("[INFO] Sent message `%s` to client\n", RELOAD_MSG)
+
+    found := false
+    related_files_mutex.Lock()
+    for _, f := range related_files[current_html] {
+        files_on_wait_mutex.Lock()
+        if i := slices.Index(files_on_wait_reload, f); i != -1 {
+            var msg string
+            if filepath.Ext(f) == ".css" {
+                msg = RELOAD_CSS_MSG
+                files_on_wait_reload[i] = files_on_wait_reload[len(files_on_wait_reload)-1]
+                files_on_wait_reload = files_on_wait_reload[:len(files_on_wait_reload)-1]
+            } else {
+                found = true
+                msg = RELOAD_MSG
             }
-            html_on_wait_reload[i] = html_on_wait_reload[len(html_on_wait_reload)-1]
-            html_on_wait_reload = html_on_wait_reload[:len(html_on_wait_reload)-1]
-            break;
+            _, err := client.Write(ws.Build_websocket_frame_msg(msg))
+            if !Check_err(err, false, "Can't send message") {
+                fmt.Printf("[INFO] Sent message `%s` to client\n", msg)
+            }
+            if found {
+                files_on_wait_reload[i] = files_on_wait_reload[len(files_on_wait_reload)-1]
+                files_on_wait_reload = files_on_wait_reload[:len(files_on_wait_reload)-1]
+            }
         }
+        files_on_wait_mutex.Unlock()
     }
+    related_files_mutex.Unlock()
+
     for {
         msg := <-websocket_channel
         if msg == "CLOSE" {
@@ -194,7 +219,6 @@ func handle_http(client net.Conn, request *http.HttpRequest) {
     switch request.Req_type {
     case "GET":
         var response http.HttpResponse
-        fmt.Printf("[INFO] Client request for `%s`\n", request.File_path)
         file_path := root_dir
         if request.File_path == "/" { file_path += path_seperator + entry_file } else { file_path += request.File_path }
         file_content := cache.Get_file_content(file_path)
@@ -206,23 +230,27 @@ func handle_http(client net.Conn, request *http.HttpRequest) {
             response.Headers["Content-Length"] = strconv.Itoa(len(file_content))
             response.Content = file_content
             if file_ext == ".html" {
-                if _, found := html_related_files[file_path]; !found {
-                    html_related_files[file_path] = make([]string, 0, INIT_BUFFER_SIZE)
+                related_files_mutex.Lock()
+                if _, found := related_files[file_path]; !found {
+                    related_files[file_path] = make([]string, 0, INIT_BUFFER_SIZE)
                 } else {
-                    html_related_files[file_path] = html_related_files[file_path][:0]
+                    related_files[file_path] = related_files[file_path][:0]
                 }
+                related_files_mutex.Unlock()
                 response.Headers["Content-Length"] = strconv.Itoa(len(file_content) + len(WEBSOCKET_INJECT_CODE))
                 response.Content                   = inject_websocket(file_path, file_content)
                 current_html                       = file_path
-                fmt.Println("[INFO] Change to `%s`\n", current_html)
+                fmt.Printf("[INFO] Change to `%s`\n", current_html)
             }
             fmt.Printf("[INFO] Send file `%s` %d bytes to client\n", file_path, len(file_content))
 
             // add file path to html related files if necessary
-            temp := html_related_files[current_html]
+            related_files_mutex.Lock()
+            temp := related_files[current_html]
             if index := slices.Index(temp, file_path); index == -1 {
-                html_related_files[current_html] = append(temp, file_path)
+                related_files[current_html] = append(temp, file_path)
             }
+            related_files_mutex.Unlock()
         } else {
             response = http.FILE_NOTFOUND
         }
