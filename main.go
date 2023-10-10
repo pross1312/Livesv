@@ -7,6 +7,7 @@ package main
 // TODO: don't reload when unrelated files get editted [x]
 // TODO: auto reload if `back button` get pressed (this does not trigger a GET request from client) [x]
 import(
+    "slices"
     http "livesv/HttpPackage"
     cache "livesv/FileCache"
     ws "livesv/WebSocket"
@@ -21,6 +22,7 @@ import(
 )
 
 const (
+    INIT_BUFFER_SIZE = 10
     WEBSOCKET_INJECT_CODE = `
     <script>
         if ('WebSocket' in window) {
@@ -57,24 +59,25 @@ const (
         }
     </script>
 `
-    SERVER_ADDR = "localhost:13123"
-    RELOAD_MSG = "RELOAD"
+    SERVER_ADDR    = "localhost:13123"
+    RELOAD_MSG     = "RELOAD"
     RELOAD_CSS_MSG = "RELOAD_CSS"
 )
 
 var (
     entry_file, root_dir string
+    current_html string // update when ever a html file websocket connect and when a html file is sent to client
     path_seperator string
     websocket_channel, file_cache_channel = make(chan string), make(chan string)
     default_browser_opener string
     has_websocket atomic.Bool
-    html_related_files = make([]string, 0, 10) // avoid reload when unrelated to current html file was edited
     html_on_wait_reload = make([]string, 0, 10) // to handle `back button` reloading
+    html_related_files = make(map[string][]string)
 )
 
 func main() {
     if len(os.Args) <= 1 {
-        fmt.Println("USAGE: progname `html file`") 
+        fmt.Println("USAGE: progname `html file`")
         os.Exit(1)
     }
     if _, err := os.Stat(os.Args[1]); err != nil {
@@ -98,26 +101,27 @@ func main() {
                             proc_attr)
     Check_err(err, true, "Can't start `%s`\n", default_browser_opener)
 
-    go cache.Update_cache_files(file_cache_channel, func(file_path string) {
-        for _, v := range html_related_files {
-            if file_path == v && has_websocket.Load() {
-                if filepath.Ext(file_path) == ".css" { websocket_channel <- RELOAD_CSS_MSG } else { websocket_channel <- RELOAD_MSG }
-                // websocket_channel <- RELOAD_MSG
-                return
-            }
-        }
-        if filepath.Ext(file_path) == ".html" { // html file is edited but not the current displaying one
-            html_on_wait_reload = append(html_on_wait_reload, file_path)
-        }
-    })
+    go cache.Update_cache_files(file_cache_channel, on_file_change)
     for {
-        fmt.Printf("[INFO] Number of goroutines: %d\n", runtime.NumGoroutine())
         client, err := server.Accept()
         if Check_err(err, false, "Can't accep client") { continue }
         go handle_client(client)
     }
 
 }
+
+func on_file_change(file_path string) {
+    if !has_websocket.Load() { return }
+    if index := slices.Index(html_related_files[current_html], file_path); index != -1 {
+        if filepath.Ext(file_path) == ".css" { websocket_channel <- RELOAD_CSS_MSG } else { websocket_channel <- RELOAD_MSG }
+        return
+    }
+    if filepath.Ext(file_path) == ".html" { // html file is edited but not the current displaying one
+        html_on_wait_reload = append(html_on_wait_reload, file_path)
+        fmt.Println("[INFO] Add `%s` to list of waiting to update files\n", file_path)
+    }
+}
+
 func os_independent_set_args() {
     switch runtime.GOOS {
     case "windows":
@@ -137,11 +141,11 @@ func os_independent_set_args() {
     fmt.Printf("[INFO] Set path seperator: %s\n", path_seperator)
 }
 
-func inject_websocket(file_content []byte) []byte {
+func inject_websocket(file_path string, file_content []byte) []byte {
     content_str := string(file_content)
     end_html_tag_index := strings.LastIndex(content_str, "</html>")
     if end_html_tag_index == -1 {
-        fmt.Println("[ERROR] Write some proper html bro -_-")
+        fmt.Printf("[WARNING] Can't inject websocket into `%s`\n\t[INFO] Can't find end tag </html>.\n", file_path)
         return file_content
     }
     return []byte(content_str[:end_html_tag_index] + WEBSOCKET_INJECT_CODE + content_str[end_html_tag_index:])
@@ -154,6 +158,10 @@ func handle_websocket(client net.Conn, request *http.HttpRequest) {
     client.Write(response.Build())
     file_path := root_dir
     if request.File_path == "/" { file_path += path_seperator + entry_file } else { file_path += request.File_path }
+    if file_path != current_html {
+        fmt.Printf("[INFO] Change to `%s`\n", file_path)
+        current_html = file_path
+    }
     for i, v := range html_on_wait_reload {
         if v == file_path {
             _, err := client.Write(ws.Build_websocket_frame_msg(RELOAD_MSG))
@@ -198,12 +206,23 @@ func handle_http(client net.Conn, request *http.HttpRequest) {
             response.Headers["Content-Length"] = strconv.Itoa(len(file_content))
             response.Content = file_content
             if file_ext == ".html" {
-                html_related_files = html_related_files[:0]
+                if _, found := html_related_files[file_path]; !found {
+                    html_related_files[file_path] = make([]string, 0, INIT_BUFFER_SIZE)
+                } else {
+                    html_related_files[file_path] = html_related_files[file_path][:0]
+                }
                 response.Headers["Content-Length"] = strconv.Itoa(len(file_content) + len(WEBSOCKET_INJECT_CODE))
-                response.Content = inject_websocket(file_content)
+                response.Content                   = inject_websocket(file_path, file_content)
+                current_html                       = file_path
+                fmt.Println("[INFO] Change to `%s`\n", current_html)
             }
             fmt.Printf("[INFO] Send file `%s` %d bytes to client\n", file_path, len(file_content))
-            html_related_files = append(html_related_files, file_path)
+
+            // add file path to html related files if necessary
+            temp := html_related_files[current_html]
+            if index := slices.Index(temp, file_path); index == -1 {
+                html_related_files[current_html] = append(temp, file_path)
+            }
         } else {
             response = http.FILE_NOTFOUND
         }
