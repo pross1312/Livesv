@@ -20,6 +20,7 @@ func Make_basic_ok(res *HttpResponse) {
     res.Version = "HTTP/1.1"
     res.Code = "200"
     res.Msg = "OK"
+    if res.Headers == nil { res.Headers = make(map[string]string) }
     res.Headers["Connection"] = "Closed"
 }
 
@@ -27,6 +28,7 @@ func Make_file_not_found(res *HttpResponse) {
     res.Version = "HTTP/1.1"
     res.Code = "404"
     res.Msg = "Not Found"
+    if res.Headers == nil { res.Headers = make(map[string]string) }
     res.Headers["Content-Length"] = strconv.Itoa(len(FILE_NOTFOUND_PAYLOAD))
     res.Headers["Connection"] = "Closed"
     res.Headers["Content-Type"] = "text/html; charset=iso-8859-1"
