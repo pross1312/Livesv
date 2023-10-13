@@ -224,7 +224,7 @@ func handle_http(client net.Conn, request *http.HttpRequest) {
         file_content := cache.Get_file_content(file_path)
         if file_content != nil {
             file_cache_channel <- file_path // add to cache system if it's not already cached
-            response = http.BASIC_GET_FILE_RESPONSE
+            http.Make_basic_ok(&response)
             file_ext := filepath.Ext(file_path)
             response.Headers["Content-type"] = http.CONTENT_TYPES[file_ext]
             response.Headers["Content-Length"] = strconv.Itoa(len(file_content))
@@ -252,7 +252,7 @@ func handle_http(client net.Conn, request *http.HttpRequest) {
             }
             related_files_mutex.Unlock()
         } else {
-            response = http.FILE_NOTFOUND
+            http.Make_file_not_found(&response)
         }
         client.Write(response.Build())
     default:
