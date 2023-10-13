@@ -35,13 +35,7 @@ func Get_last_modified(file_path string) *time.Time {
 }
 
 func Get_file_content(file_path string) []byte {
-    cannot_read_tolerance := 100 // for cases like when a program is writing to that file
-    count := 0
     content, err := os.ReadFile(file_path)
-    for count < cannot_read_tolerance && (err != nil && os.IsNotExist(err) || len(content) == 0) {
-        content, err = os.ReadFile(file_path)
-        count++
-    }
     if err != nil {
         fmt.Fprintf(os.Stdout, "[WARNING] %s\n\t[INFO] %s %s\n", err.Error(), "Can't read file", file_path)
         return nil
@@ -67,10 +61,12 @@ func Update_cache_files(ch chan string, on_file_change func(string)) {
                 fmt.Println("[INFO] Channel closed!")
             }
         default:
+            time.Sleep(100 * time.Millisecond)
         }
         for file_path, entry := range files_cache {
             last_modified := Get_last_modified(file_path)
             if last_modified != nil && !entry.last_modified.Equal(*last_modified) {
+                if entry.last_hash != "" { time.Sleep(50 * time.Millisecond) }// wait a for the file to be saved completely
                 new_hash := Get_sha256(file_path)
                 if new_hash != entry.last_hash {
                     if entry.last_hash != "" { on_file_change(file_path) }
@@ -82,6 +78,5 @@ func Update_cache_files(ch chan string, on_file_change func(string)) {
                 }
             }
         }
-        time.Sleep(200)
     }
 }
