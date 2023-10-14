@@ -6,6 +6,7 @@ package main
 // TODO: maybe figure out why golang/sha256.Sum256 not working properpy (or maybe os.ReadFile not working) [x] -> os.ReadFile not working properly when program is writing to that file
 // TODO: don't reload when unrelated files get editted [x]
 // TODO: auto reload if `back button` get pressed (this does not trigger a GET request from client) [x]
+// TODO: use chunk encoding for large file ? [ ]
 import(
     "sync"
     "slices"
@@ -171,28 +172,16 @@ func handle_websocket(client net.Conn, request *http.HttpRequest) {
         current_html = file_path
     }
 
-    found := false
     related_files_mutex.Lock()
     for _, f := range related_files[current_html] {
         files_on_wait_mutex.Lock()
         if i := slices.Index(files_on_wait_reload, f); i != -1 {
-            var msg string
-            if filepath.Ext(f) == ".css" {
-                msg = RELOAD_CSS_MSG
-                files_on_wait_reload[i] = files_on_wait_reload[len(files_on_wait_reload)-1]
-                files_on_wait_reload = files_on_wait_reload[:len(files_on_wait_reload)-1]
-            } else {
-                found = true
-                msg = RELOAD_MSG
-            }
-            _, err := client.Write(ws.Build_websocket_frame_msg(msg))
+            _, err := client.Write(ws.Build_websocket_frame_msg(RELOAD_MSG))
             if !Check_err(err, false, "Can't send message") {
-                fmt.Printf("[INFO] Sent message `%s` to client\n", msg)
+                fmt.Printf("[INFO] Sent message `%s` to client\n", RELOAD_MSG)
             }
-            if found {
-                files_on_wait_reload[i] = files_on_wait_reload[len(files_on_wait_reload)-1]
-                files_on_wait_reload = files_on_wait_reload[:len(files_on_wait_reload)-1]
-            }
+            files_on_wait_reload[i] = files_on_wait_reload[len(files_on_wait_reload)-1]
+            files_on_wait_reload = files_on_wait_reload[:len(files_on_wait_reload)-1]
         }
         files_on_wait_mutex.Unlock()
     }
