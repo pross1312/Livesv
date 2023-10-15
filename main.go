@@ -156,7 +156,7 @@ func handle_websocket(client net.Conn, request *http.HttpRequest) {
     fmt.Println("[INFO] Successfully connected")
     client.Write(response.Build())
     file_path := root_dir
-    if request.Url.Path == "/" { file_path += entry_file } else { file_path += request.Url.Path }
+    if request.Url.Path == "/" { file_path += "/" + entry_file } else { file_path += request.Url.Path }
     if file_path != current_html {
         fmt.Printf("[INFO] Change to `%s`\n", file_path)
         current_html = file_path
