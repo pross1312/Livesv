@@ -1,5 +1,7 @@
 package HttpPackage
 import (
+    "livesv/Util"
+    "net/url"
     "strings"
     "os"
     "fmt"
@@ -13,7 +15,9 @@ var (
 )
 
 type HttpRequest struct {
-    Req_type, File_path, Version string
+    Method string
+    Url *url.URL
+    Version string
     Headers map[string]string
     Content string
 }
@@ -28,8 +32,10 @@ func Parse_request(request string) *HttpRequest {
         fmt.Printf("[ERROR] Can't parse %s\n", line)
         os.Exit(1)
     }
-    result.Req_type = line_data[0]
-    result.File_path = line_data[1]
+    result.Method = line_data[0]
+    var err error
+    result.Url, err = url.ParseRequestURI(line_data[1])
+    if Util.Check_err(err, false, "Can't parse url %s\n" + line_data[1]) { return nil }
     result.Version = line_data[2]
     // parse headers ... (Connection: keep-alive)
     for {
@@ -53,7 +59,7 @@ func new_request() *HttpRequest {
     return req
 }
 func (req HttpRequest) print() {
-    fmt.Printf("Type: %s\nFile: %s\nVersion: %s\n", req.Req_type, req.File_path, req.Version)
+    fmt.Printf("Type: %s\nFile: %s\nVersion: %s\n", req.Method, req.Url, req.Version)
     for k, v := range req.Headers {
         fmt.Printf("%s: %s\n", k, v)
     }

@@ -10,6 +10,7 @@ package main
 import(
     "sync"
     "slices"
+    "livesv/Util"
     http "livesv/HttpPackage"
     cache "livesv/FileCache"
     ws "livesv/WebSocket"
@@ -69,7 +70,6 @@ const (
 var (
     entry_file, root_dir string
     current_html string // update when ever a html file websocket connect and when a html file is sent to client
-    path_seperator string
     websocket_channel, file_cache_channel = make(chan string), make(chan string)
     default_browser_opener string
     has_websocket atomic.Bool
@@ -85,30 +85,24 @@ func main() {
         os.Exit(1)
     }
     if _, err := os.Stat(os.Args[1]); err != nil {
-        Check_err(err, true, fmt.Sprintf("`%s` not found.", os.Args[1]))
+        Util.Check_err(err, true, fmt.Sprintf("`%s` not found.", os.Args[1]))
     }
-    os_independent_set_args()
     root_dir = filepath.Dir(os.Args[1])
     entry_file = filepath.Base(os.Args[1])
     fmt.Printf("[INFO] Start server with file `%s`\n", entry_file)
     fmt.Printf("[INFO] Root directory `%s`\n", root_dir)
 
     server, err := net.Listen("tcp", SERVER_ADDR)
-    Check_err(err, true, "[INFO] Can't create server")
+    Util.Check_err(err, true, "[INFO] Can't create server")
     defer server.Close()
     fmt.Println("[INFO] Server on:", server.Addr().String())
 
-    // open in browser
-    var proc_attr *os.ProcAttr = new(os.ProcAttr)
-    _, err = os.StartProcess(default_browser_opener, // start default broser
-                            []string{default_browser_opener, fmt.Sprintf("http://%s/", SERVER_ADDR)},
-                            proc_attr)
-    Check_err(err, true, "Can't start `%s`\n", default_browser_opener)
+    open_default_browser()
 
     go cache.Update_cache_files(file_cache_channel, on_file_change)
     for {
         client, err := server.Accept()
-        if Check_err(err, false, "Can't accep client") { continue }
+        if Util.Check_err(err, false, "Can't accep client") { continue }
         go handle_client(client)
     }
 
@@ -132,23 +126,19 @@ func on_file_change(file_path string) {
     files_on_wait_mutex.Unlock()
 }
 
-func os_independent_set_args() {
+func open_default_browser() {
+    var attr os.ProcAttr
     switch runtime.GOOS {
     case "windows":
-        path_seperator = "\\"
-        default_browser_opener = "explorer"
-    case "darwin":
-        fmt.Fprintln(os.Stderr, "[ERROR] Unsupported platform")
-        os.Exit(1)
+        _, err := os.StartProcess("C:\\Windows\\System32\\cmd.exe", []string{"C:\\Windows\\System32\\cmd.exe", "http://" + SERVER_ADDR}, &attr)
+        Util.Check_err(err, false, "Can't start default server", fmt.Sprintf("Please open `http://%s` on a browser\n", SERVER_ADDR))
     case "linux":
-        default_browser_opener = "/usr/bin/xdg-open"
-        path_seperator = "/"
+        _, err := os.StartProcess("/usr/bin/xdg-open", []string{"/usr/bin/xdg-open", "http://" + SERVER_ADDR}, &attr)
+        Util.Check_err(err, false, "Can't start default server", fmt.Sprintf("Please open `http://%s` on a browser\n", SERVER_ADDR))
     default:
-        fmt.Fprintln(os.Stderr, "[ERROR] Unsupported platform")
-        os.Exit(1)
+        fmt.Println("[WARNING] Unknown platform, the program may not work correctly")
+        fmt.Printf("[INFO] Please open `http://%s` on a browser\n", SERVER_ADDR)
     }
-    fmt.Printf("[INFO] Set default browser open program: %s\n", default_browser_opener)
-    fmt.Printf("[INFO] Set path seperator: %s\n", path_seperator)
 }
 
 func inject_websocket(file_path string, file_content []byte) []byte {
@@ -166,7 +156,7 @@ func handle_websocket(client net.Conn, request *http.HttpRequest) {
     fmt.Println("[INFO] Successfully connected")
     client.Write(response.Build())
     file_path := root_dir
-    if request.File_path == "/" { file_path += path_seperator + entry_file } else { file_path += request.File_path }
+    if request.Url.Path == "/" { file_path += entry_file } else { file_path += request.Url.Path }
     if file_path != current_html {
         fmt.Printf("[INFO] Change to `%s`\n", file_path)
         current_html = file_path
@@ -177,7 +167,7 @@ func handle_websocket(client net.Conn, request *http.HttpRequest) {
         files_on_wait_mutex.Lock()
         if i := slices.Index(files_on_wait_reload, f); i != -1 {
             _, err := client.Write(ws.Build_websocket_frame_msg(RELOAD_MSG))
-            if !Check_err(err, false, "Can't send message") {
+            if !Util.Check_err(err, false, "Can't send message") {
                 fmt.Printf("[INFO] Sent message `%s` to client\n", RELOAD_MSG)
             }
             files_on_wait_reload[i] = files_on_wait_reload[len(files_on_wait_reload)-1]
@@ -191,13 +181,13 @@ func handle_websocket(client net.Conn, request *http.HttpRequest) {
         msg := <-websocket_channel
         if msg == "CLOSE" {
             _, err := client.Write(ws.CLOSE_FRAME)
-            if !Check_err(err, false, "Can't send quit message") {
+            if !Util.Check_err(err, false, "Can't send quit message") {
                 fmt.Println("[INFO] Send `quit` message to client")
             }
             break;
         } else {
             _, err := client.Write(ws.Build_websocket_frame_msg(msg))
-            if !Check_err(err, false, "Can't send message") {
+            if !Util.Check_err(err, false, "Can't send message") {
                 fmt.Printf("[INFO] Sent message `%s` to client\n", msg)
             }
         }
@@ -205,12 +195,12 @@ func handle_websocket(client net.Conn, request *http.HttpRequest) {
 }
 
 func handle_http(client net.Conn, request *http.HttpRequest) {
-    switch request.Req_type {
+    switch request.Method {
     case "GET":
         var response http.HttpResponse
         file_path := root_dir
-        if request.File_path == "/" { file_path += path_seperator + entry_file } else { file_path += request.File_path }
-        file_content := cache.Get_file_content(file_path)
+        if request.Url.Path == "/" { file_path += "/" + entry_file } else { file_path += request.Url.Path }
+        file_content := cache.Os_independent_readfile(file_path)
         if file_content != nil {
             file_cache_channel <- file_path // add to cache system if it's not already cached
             http.Make_basic_ok(&response)
@@ -254,7 +244,7 @@ func handle_client(client net.Conn) {
     defer client.Close()
     buffer := make([]byte, 1024)
     n, err := client.Read(buffer)
-    if Check_err(err, false, "Can't read from client") { return }
+    if Util.Check_err(err, false, "Can't read from client") { return }
     request := http.Parse_request(string(buffer[:n]))
     if request.Headers["Connection"] == "Upgrade" && request.Headers["Upgrade"] == "websocket" {
         if has_websocket.Load() {
@@ -268,25 +258,4 @@ func handle_client(client net.Conn) {
         handle_http(client, request)
     }
     fmt.Println("[INFO] Client closed")
-}
-
-func Check_err(err error, fatal bool, info ...string) bool {
-    if err != nil {
-        var msg_builder strings.Builder
-        if fatal { msg_builder.WriteString("[ERROR] ") } else { msg_builder.WriteString("[WARNING] ") }
-        msg_builder.WriteString(err.Error())
-        msg_builder.WriteString("\n")
-        for _, v := range info {
-            msg_builder.WriteString("\t [INFO] ")
-            msg_builder.WriteString(v)
-        }
-        if fatal {
-            fmt.Println(msg_builder.String())
-            os.Exit(1)
-        } else {
-            fmt.Println(msg_builder.String())
-        }
-        return true;
-    }
-    return false;
 }

@@ -34,7 +34,7 @@ func Get_last_modified(file_path string) *time.Time {
     return result
 }
 
-func Get_file_content(file_path string) []byte {
+func Os_independent_readfile(file_path string) []byte {
     content, err := os.ReadFile(file_path)
     if err != nil {
         fmt.Fprintf(os.Stdout, "[WARNING] %s\n\t[INFO] %s %s\n", err.Error(), "Can't read file", file_path)
@@ -44,7 +44,7 @@ func Get_file_content(file_path string) []byte {
 }
 
 func Get_sha256(file_path string) string {
-    sum := sha256.Sum256(Get_file_content(file_path))
+    sum := sha256.Sum256(Os_independent_readfile(file_path))
     return hex.EncodeToString(sum[:])
 }
 
