@@ -2,6 +2,7 @@
 package FileCache
 
 import (
+    "livesv/Util"
     "encoding/hex"
     "time"
     "fmt"
@@ -22,29 +23,17 @@ var (
 
 func Get_last_modified(file_path string) *time.Time {
     file, err := os.Open(file_path)
-    if err != nil { return nil }
+    if Util.Check_err(err, false) { return nil }
     defer file.Close()
     info, err := file.Stat()
-    if err != nil {
-        fmt.Println("[WARNING] Can't stat file", file_path)
-        return nil
-    }
+    if Util.Check_err(err, false, "Can't stat file " + file_path) { return nil }
     result := new(time.Time)
     *result = info.ModTime()
     return result
 }
 
-func Os_independent_readfile(file_path string) []byte {
-    content, err := os.ReadFile(file_path)
-    if err != nil {
-        fmt.Fprintf(os.Stdout, "[WARNING] %s\n\t[INFO] %s %s\n", err.Error(), "Can't read file", file_path)
-        return nil
-    }
-    return content
-}
-
 func Get_sha256(file_path string) string {
-    sum := sha256.Sum256(Os_independent_readfile(file_path))
+    sum := sha256.Sum256(Util.Os_independent_readfile(file_path))
     return hex.EncodeToString(sum[:])
 }
 

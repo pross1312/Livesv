@@ -3,6 +3,7 @@ import (
     "fmt"
     "os"
     "strings"
+    "path/filepath"
 )
 func Check_err(err error, fatal bool, info ...string) bool {
     if err != nil {
@@ -13,6 +14,7 @@ func Check_err(err error, fatal bool, info ...string) bool {
         for _, v := range info {
             msg_builder.WriteString("\t [INFO] ")
             msg_builder.WriteString(v)
+            msg_builder.WriteString("\n")
         }
         if fatal {
             fmt.Println(msg_builder.String())
@@ -24,3 +26,10 @@ func Check_err(err error, fatal bool, info ...string) bool {
     }
     return false;
 }
+func Os_independent_readfile(file_path string) []byte {
+    file_path = filepath.FromSlash(file_path)
+    content, err := os.ReadFile(file_path)
+    if Check_err(err, false, "Can't read file " + file_path) { return nil }
+    return content
+}
+

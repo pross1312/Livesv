@@ -200,7 +200,7 @@ func handle_http(client net.Conn, request *http.HttpRequest) {
         var response http.HttpResponse
         file_path := root_dir
         if request.Url.Path == "/" { file_path += "/" + entry_file } else { file_path += request.Url.Path }
-        file_content := cache.Os_independent_readfile(file_path)
+        file_content := Util.Os_independent_readfile(file_path)
         if file_content != nil {
             file_cache_channel <- file_path // add to cache system if it's not already cached
             http.Make_basic_ok(&response)
