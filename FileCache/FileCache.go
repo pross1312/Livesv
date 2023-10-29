@@ -19,18 +19,8 @@ type FileCache = map[FilePath]FileCacheEntry
 
 var (
     files_cache = make(FileCache)
+    on_waiting_removed = make([]string, 0, 10)
 )
-
-func Get_last_modified(file_path string) *time.Time {
-    file, err := os.Open(file_path)
-    if Util.Check_err(err, false) { return nil }
-    defer file.Close()
-    info, err := file.Stat()
-    if Util.Check_err(err, false, "Can't stat file " + file_path) { return nil }
-    result := new(time.Time)
-    *result = info.ModTime()
-    return result
-}
 
 func Get_sha256(file_path string) string {
     sum := sha256.Sum256(Util.Os_independent_readfile(file_path))
@@ -53,19 +43,23 @@ func Update_cache_files(ch chan string, on_file_change func(string)) {
             time.Sleep(100 * time.Millisecond)
         }
         for file_path, entry := range files_cache {
-            last_modified := Get_last_modified(file_path)
-            if last_modified != nil && !entry.last_modified.Equal(*last_modified) {
-                if entry.last_hash != "" { time.Sleep(50 * time.Millisecond) }// wait a for the file to be saved completely
+            info, err := os.Stat(file_path)
+            if Util.Check_err(err, false, "Can't stat file") {
+                on_waiting_removed = append(on_waiting_removed, file_path)
+            } else if !entry.last_modified.Equal(info.ModTime()) {
+                if entry.last_hash != "" { time.Sleep(100 * time.Millisecond) }// wait a for the file to be saved completely
                 new_hash := Get_sha256(file_path)
                 if new_hash != entry.last_hash {
                     if entry.last_hash != "" { on_file_change(file_path) }
                     fmt.Printf("[INFO] Updated sha512 for file %s\n", file_path)
                 }
                 files_cache[file_path] = FileCacheEntry{
-                    last_modified: *last_modified,
+                    last_modified: info.ModTime(),
                     last_hash: new_hash,
                 }
             }
         }
+        for _, f := range on_waiting_removed { delete(files_cache, f) }
+        on_waiting_removed = on_waiting_removed[:0]
     }
 }
