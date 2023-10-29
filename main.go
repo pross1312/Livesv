@@ -89,8 +89,8 @@ func main() {
     }
     root_dir = filepath.Dir(os.Args[1])
     entry_file = filepath.Base(os.Args[1])
-    Util.Log(Util.INFO, "Start server with file `%s`\n", entry_file)
-    Util.Log(Util.INFO, "Root directory `%s`\n", root_dir)
+    Util.Log(Util.INFO, "Start server with file `%s`", entry_file)
+    Util.Log(Util.INFO, "Root directory `%s`", root_dir)
 
     server, err := net.Listen("tcp", SERVER_ADDR)
     Util.Check_err(err, true, "Can't create server")
@@ -121,7 +121,7 @@ func on_file_change(file_path string) {
     files_on_wait_mutex.Lock()
     if index := slices.Index(files_on_wait_reload, file_path); index == -1 {
         files_on_wait_reload = append(files_on_wait_reload, file_path)
-        Util.Log(Util.INFO, "Add `%s` to list of waiting to update files\n", file_path)
+        Util.Log(Util.INFO, "Add `%s` to list of waiting to update files", file_path)
     }
     files_on_wait_mutex.Unlock()
 }
@@ -137,7 +137,7 @@ func open_default_browser() {
         Util.Check_err(err, false, "Can't start default server", fmt.Sprintf("Open `http://%s` on a browser", SERVER_ADDR))
     default:
         Util.Log(Util.WARN, "Unknown platform, the program may not work correctly")
-        Util.Log(Util.INFO, "\tOpen `http://%s` on a browser\n", SERVER_ADDR)
+        Util.Log(Util.INFO, "\tOpen `http://%s` on a browser", SERVER_ADDR)
     }
 }
 
@@ -159,7 +159,7 @@ func handle_websocket(client net.Conn, request *http.HttpRequest) {
     file_path := root_dir
     if request.Url.Path == "/" { file_path += "/" + entry_file } else { file_path += request.Url.Path }
     if file_path != current_html {
-        Util.Log(Util.INFO, "Change to `%s`\n", file_path)
+        Util.Log(Util.INFO, "Change to `%s`", file_path)
         current_html = file_path
     }
 
@@ -169,7 +169,7 @@ func handle_websocket(client net.Conn, request *http.HttpRequest) {
         if i := slices.Index(files_on_wait_reload, f); i != -1 {
             _, err := client.Write(ws.Build_websocket_frame_msg(RELOAD_MSG))
             if !Util.Check_err(err, false, "Can't send message") {
-                Util.Log(Util.INFO, "Sent message `%s` to client\n", RELOAD_MSG)
+                Util.Log(Util.INFO, "Sent message `%s` to client", RELOAD_MSG)
             }
             files_on_wait_reload[i] = files_on_wait_reload[len(files_on_wait_reload)-1]
             files_on_wait_reload = files_on_wait_reload[:len(files_on_wait_reload)-1]
@@ -189,7 +189,7 @@ func handle_websocket(client net.Conn, request *http.HttpRequest) {
         } else {
             _, err := client.Write(ws.Build_websocket_frame_msg(msg))
             if !Util.Check_err(err, false, "Can't send message") {
-                Util.Log(Util.INFO, "Sent message `%s` to client\n", msg)
+                Util.Log(Util.INFO, "Sent message `%s` to client", msg)
             }
         }
     }
@@ -220,9 +220,9 @@ func handle_http(client net.Conn, request *http.HttpRequest) {
                 response.Headers["Content-Length"] = strconv.Itoa(len(file_content) + len(WEBSOCKET_INJECT_CODE))
                 response.Content                   = inject_websocket(file_path, file_content)
                 current_html                       = file_path
-                Util.Log(Util.INFO, "Change to `%s`\n", current_html)
+                Util.Log(Util.INFO, "Change to `%s`", current_html)
             }
-            Util.Log(Util.INFO, "Send file `%s` %d bytes to client\n", file_path, len(file_content))
+            Util.Log(Util.INFO, "Send file `%s` %d bytes to client", file_path, len(file_content))
 
             // add file path to html related files if necessary
             related_files_mutex.Lock()

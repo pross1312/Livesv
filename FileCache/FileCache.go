@@ -33,7 +33,7 @@ func Update_cache_files(ch chan string, on_file_change func(string)) {
             if ok {
                 if _, found := files_cache[file_path]; !found {
                     files_cache[file_path] = FileCacheEntry{}
-                    Util.Log(Util.INFO, "Cache file `%s`\n", file_path)
+                    Util.Log(Util.INFO, "Cache file `%s`", file_path)
                 }
             } else {
                 Util.Log(Util.INFO, "Channel closed!")
@@ -50,7 +50,7 @@ func Update_cache_files(ch chan string, on_file_change func(string)) {
                 new_hash := Get_sha256(file_path)
                 if new_hash != entry.last_hash {
                     if entry.last_hash != "" { on_file_change(file_path) }
-                    Util.Log(Util.INFO, "Updated sha512 for file %s\n", file_path)
+                    Util.Log(Util.INFO, "Updated sha512 for file %s", file_path)
                 }
                 files_cache[file_path] = FileCacheEntry{
                     last_modified: info.ModTime(),
