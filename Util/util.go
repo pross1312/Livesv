@@ -2,26 +2,27 @@ package Util
 import (
     "fmt"
     "os"
-    "strings"
     "path/filepath"
 )
+const (
+   INFO = "[INFO]"
+   WARN = "[WARNING]"
+   ERR  = "[ERROR]"
+)
+func Log(log_type string, format string, args ...any) {
+    fmt.Printf("%-10s ", log_type)
+    fmt.Printf(format, args...)
+    fmt.Println();
+}
+func Unimplemented() {
+    Log(ERR, "Umimplemented\n")
+    os.Exit(1)
+}
 func Check_err(err error, fatal bool, info ...string) bool {
     if err != nil {
-        var msg_builder strings.Builder
-        if fatal { msg_builder.WriteString("[ERROR] ") } else { msg_builder.WriteString("[WARNING] ") }
-        msg_builder.WriteString(err.Error())
-        msg_builder.WriteString("\n")
-        for _, v := range info {
-            msg_builder.WriteString("\t [INFO] ")
-            msg_builder.WriteString(v)
-            msg_builder.WriteString("\n")
-        }
-        if fatal {
-            fmt.Println(msg_builder.String())
-            os.Exit(1)
-        } else {
-            fmt.Println(msg_builder.String())
-        }
+        if fatal { Log(ERR, err.Error()); } else { Log(WARN, err.Error()); }
+        for _, v := range info { Log(INFO, "\t%s", v); }
+        if fatal { os.Exit(1) }
         return true;
     }
     return false;
@@ -32,4 +33,3 @@ func Os_independent_readfile(file_path string) []byte {
     if Check_err(err, false, "Can't read file " + file_path) { return nil }
     return content
 }
-

@@ -29,7 +29,7 @@ func Parse_request(request string) *HttpRequest {
     line := request[:end]
     line_data := strings.Split(line, " ")
     if len(line_data) != 3 {
-        fmt.Printf("[ERROR] Can't parse %s\n", line)
+        Util.Log(Util.ERR, "Can't parse %s\n", line)
         os.Exit(1)
     }
     result.Method = line_data[0]
@@ -42,10 +42,10 @@ func Parse_request(request string) *HttpRequest {
         request = request[end+2:]
         end = strings.Index(request, "\r\n")
         line = request[:end]
-        if len(line) == 0 {break} // end of headers 
+        if len(line) == 0 {break} // end of headers
         sep_index := strings.Index(line, ": ")
         if sep_index == -1 {
-            fmt.Printf("[ERROR] Can't parse %s\n", line)
+            Util.Log(Util.ERR, "Can't parse %s\n", line)
             os.Exit(1)
         }
         result.Headers[line[:sep_index]] = line[sep_index+2:]
@@ -65,5 +65,3 @@ func (req HttpRequest) print() {
     }
     fmt.Printf("-----------------------------------------------\n%s\n", req.Content)
 }
-
-

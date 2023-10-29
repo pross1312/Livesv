@@ -24,14 +24,13 @@ package WebSocket
 // + - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - +
 // |                     Payload Data continued ...                |
 // +---------------------------------------------------------------+
-// 
+//
 
 import (
     http "livesv/HttpPackage"
     "crypto/sha1"
     "encoding/base64"
-    "fmt"
-    "os"
+    "livesv/Util"
 )
 
 var (
@@ -59,8 +58,7 @@ func Build_websocket_frame_msg(msg string) []byte {
     if len(msg) < 126 {
         return append([]byte{0x81, byte(len(msg))}, msg...)
     } else {
-        fmt.Fprintf(os.Stderr, "[ERROR] Umimplemented\n")
-        os.Exit(1)
+        Util.Unimplemented()
     }
     return nil
 }

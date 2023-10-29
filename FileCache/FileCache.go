@@ -5,7 +5,6 @@ import (
     "livesv/Util"
     "encoding/hex"
     "time"
-    "fmt"
     "os"
     "crypto/sha256"
 )
@@ -33,11 +32,11 @@ func Update_cache_files(ch chan string, on_file_change func(string)) {
         case file_path, ok := <-ch:
             if ok {
                 if _, found := files_cache[file_path]; !found {
-                    files_cache[file_path] = FileCacheEntry{} 
-                    fmt.Printf("[INFO] Cache file `%s`\n", file_path)
+                    files_cache[file_path] = FileCacheEntry{}
+                    Util.Log(Util.INFO, "Cache file `%s`\n", file_path)
                 }
             } else {
-                fmt.Println("[INFO] Channel closed!")
+                Util.Log(Util.INFO, "Channel closed!")
             }
         default:
             time.Sleep(100 * time.Millisecond)
@@ -51,7 +50,7 @@ func Update_cache_files(ch chan string, on_file_change func(string)) {
                 new_hash := Get_sha256(file_path)
                 if new_hash != entry.last_hash {
                     if entry.last_hash != "" { on_file_change(file_path) }
-                    fmt.Printf("[INFO] Updated sha512 for file %s\n", file_path)
+                    Util.Log(Util.INFO, "Updated sha512 for file %s\n", file_path)
                 }
                 files_cache[file_path] = FileCacheEntry{
                     last_modified: info.ModTime(),

@@ -89,13 +89,13 @@ func main() {
     }
     root_dir = filepath.Dir(os.Args[1])
     entry_file = filepath.Base(os.Args[1])
-    fmt.Printf("[INFO] Start server with file `%s`\n", entry_file)
-    fmt.Printf("[INFO] Root directory `%s`\n", root_dir)
+    Util.Log(Util.INFO, "Start server with file `%s`\n", entry_file)
+    Util.Log(Util.INFO, "Root directory `%s`\n", root_dir)
 
     server, err := net.Listen("tcp", SERVER_ADDR)
-    Util.Check_err(err, true, "[INFO] Can't create server")
+    Util.Check_err(err, true, "Can't create server")
     defer server.Close()
-    fmt.Println("[INFO] Server on:", server.Addr().String())
+    Util.Log(Util.INFO, "Server on: %s", server.Addr().String())
 
     open_default_browser()
 
@@ -121,7 +121,7 @@ func on_file_change(file_path string) {
     files_on_wait_mutex.Lock()
     if index := slices.Index(files_on_wait_reload, file_path); index == -1 {
         files_on_wait_reload = append(files_on_wait_reload, file_path)
-        fmt.Printf("[INFO] Add `%s` to list of waiting to update files\n", file_path)
+        Util.Log(Util.INFO, "Add `%s` to list of waiting to update files\n", file_path)
     }
     files_on_wait_mutex.Unlock()
 }
@@ -131,13 +131,13 @@ func open_default_browser() {
     switch runtime.GOOS {
     case "windows":
         _, err := os.StartProcess("C:\\Windows\\System32\\cmd.exe", []string{"C:\\Windows\\System32\\cmd.exe", "http://" + SERVER_ADDR}, &attr)
-        Util.Check_err(err, false, "Can't start default server", fmt.Sprintf("Please open `http://%s` on a browser\n", SERVER_ADDR))
+        Util.Check_err(err, false, "Can't start default server", fmt.Sprintf("Open `http://%s` on a browser", SERVER_ADDR))
     case "linux":
         _, err := os.StartProcess("/usr/bin/xdg-open", []string{"/usr/bin/xdg-open", "http://" + SERVER_ADDR}, &attr)
-        Util.Check_err(err, false, "Can't start default server", fmt.Sprintf("Please open `http://%s` on a browser\n", SERVER_ADDR))
+        Util.Check_err(err, false, "Can't start default server", fmt.Sprintf("Open `http://%s` on a browser", SERVER_ADDR))
     default:
-        fmt.Println("[WARNING] Unknown platform, the program may not work correctly")
-        fmt.Printf("[INFO] Please open `http://%s` on a browser\n", SERVER_ADDR)
+        Util.Log(Util.WARN, "Unknown platform, the program may not work correctly")
+        Util.Log(Util.INFO, "\tOpen `http://%s` on a browser\n", SERVER_ADDR)
     }
 }
 
@@ -145,7 +145,8 @@ func inject_websocket(file_path string, file_content []byte) []byte {
     content_str := string(file_content)
     end_html_tag_index := strings.LastIndex(content_str, "</html>")
     if end_html_tag_index == -1 {
-        fmt.Printf("[WARNING] Can't inject websocket into `%s`\n\t[INFO] Can't find end tag </html>.\n", file_path)
+        Util.Log(Util.WARN, "Can't inject websocket into `%s`", file_path)
+        Util.Log(Util.INFO, "\tCan't find end tag </html>.")
         return file_content
     }
     return []byte(content_str[:end_html_tag_index] + WEBSOCKET_INJECT_CODE + content_str[end_html_tag_index:])
@@ -153,12 +154,12 @@ func inject_websocket(file_path string, file_content []byte) []byte {
 
 func handle_websocket(client net.Conn, request *http.HttpRequest) {
     response := ws.Build_websocket_accept(request.Headers["Sec-WebSocket-Key"])
-    fmt.Println("[INFO] Successfully connected")
+    Util.Log(Util.INFO, "Successfully connected")
     client.Write(response.Build())
     file_path := root_dir
     if request.Url.Path == "/" { file_path += "/" + entry_file } else { file_path += request.Url.Path }
     if file_path != current_html {
-        fmt.Printf("[INFO] Change to `%s`\n", file_path)
+        Util.Log(Util.INFO, "Change to `%s`\n", file_path)
         current_html = file_path
     }
 
@@ -168,7 +169,7 @@ func handle_websocket(client net.Conn, request *http.HttpRequest) {
         if i := slices.Index(files_on_wait_reload, f); i != -1 {
             _, err := client.Write(ws.Build_websocket_frame_msg(RELOAD_MSG))
             if !Util.Check_err(err, false, "Can't send message") {
-                fmt.Printf("[INFO] Sent message `%s` to client\n", RELOAD_MSG)
+                Util.Log(Util.INFO, "Sent message `%s` to client\n", RELOAD_MSG)
             }
             files_on_wait_reload[i] = files_on_wait_reload[len(files_on_wait_reload)-1]
             files_on_wait_reload = files_on_wait_reload[:len(files_on_wait_reload)-1]
@@ -182,13 +183,13 @@ func handle_websocket(client net.Conn, request *http.HttpRequest) {
         if msg == "CLOSE" {
             _, err := client.Write(ws.CLOSE_FRAME)
             if !Util.Check_err(err, false, "Can't send quit message") {
-                fmt.Println("[INFO] Send `quit` message to client")
+                Util.Log(Util.INFO, "Send `quit` message to client")
             }
             break;
         } else {
             _, err := client.Write(ws.Build_websocket_frame_msg(msg))
             if !Util.Check_err(err, false, "Can't send message") {
-                fmt.Printf("[INFO] Sent message `%s` to client\n", msg)
+                Util.Log(Util.INFO, "Sent message `%s` to client\n", msg)
             }
         }
     }
@@ -219,9 +220,9 @@ func handle_http(client net.Conn, request *http.HttpRequest) {
                 response.Headers["Content-Length"] = strconv.Itoa(len(file_content) + len(WEBSOCKET_INJECT_CODE))
                 response.Content                   = inject_websocket(file_path, file_content)
                 current_html                       = file_path
-                fmt.Printf("[INFO] Change to `%s`\n", current_html)
+                Util.Log(Util.INFO, "Change to `%s`\n", current_html)
             }
-            fmt.Printf("[INFO] Send file `%s` %d bytes to client\n", file_path, len(file_content))
+            Util.Log(Util.INFO, "Send file `%s` %d bytes to client\n", file_path, len(file_content))
 
             // add file path to html related files if necessary
             related_files_mutex.Lock()
@@ -231,12 +232,11 @@ func handle_http(client net.Conn, request *http.HttpRequest) {
             }
             related_files_mutex.Unlock()
         } else {
-            http.Make_file_not_found(&response)
+            http.Make_file_not_found(&response, file_path)
         }
         client.Write(response.Build())
     default:
-        fmt.Println("Unimplemented")
-        os.Exit(1)
+        Util.Unimplemented()
     }
 }
 
@@ -257,5 +257,5 @@ func handle_client(client net.Conn) {
     } else {
         handle_http(client, request)
     }
-    fmt.Println("[INFO] Client closed")
+    Util.Log(Util.INFO, "Client closed")
 }

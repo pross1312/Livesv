@@ -7,7 +7,7 @@ import (
 )
 
 const (
-    FILE_NOTFOUND_PAYLOAD = "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html>\n<head>\n   <title>404 Not Found</title>\n</head>\n<body>\n   <h1>Not Found</h1>\n   <p>The requested URL /t.html was not found on this server.</p>\n</body>\n</html>\n"
+    FILE_NOTFOUND_PAYLOAD = "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html>\n<head>\n   <title>404 Not Found</title>\n</head>\n<body>\n   <h1>Not Found</h1>\n   <p>The requested URL /%s was not found on this server.</p>\n</body>\n</html>\n"
 )
 
 type HttpResponse struct {
@@ -24,15 +24,16 @@ func Make_basic_ok(res *HttpResponse) {
     res.Headers["Connection"] = "Closed"
 }
 
-func Make_file_not_found(res *HttpResponse) {
+func Make_file_not_found(res *HttpResponse, file_path string) {
     res.Version = "HTTP/1.1"
     res.Code = "404"
     res.Msg = "Not Found"
     if res.Headers == nil { res.Headers = make(map[string]string) }
-    res.Headers["Content-Length"] = strconv.Itoa(len(FILE_NOTFOUND_PAYLOAD))
+    content := fmt.Sprintf(FILE_NOTFOUND_PAYLOAD, file_path)
+    res.Headers["Content-Length"] = strconv.Itoa(len(content))
     res.Headers["Connection"] = "Closed"
     res.Headers["Content-Type"] = "text/html; charset=iso-8859-1"
-    res.Content = []byte(FILE_NOTFOUND_PAYLOAD)
+    res.Content = []byte(content)
 }
 
 func (res HttpResponse) print() {
