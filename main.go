@@ -158,10 +158,7 @@ func handle_websocket(client net.Conn, request *http.HttpRequest) {
     client.Write(response.Build())
     file_path := root_dir
     if request.Url.Path == "/" { file_path += "/" + entry_file } else { file_path += request.Url.Path }
-    if file_path != current_html {
-        Util.Log(Util.INFO, "Change to `%s`", file_path)
-        current_html = file_path
-    }
+    current_html = file_path // maybe unecessary but just do it anyway (this could have already happen when send html file)
 
     related_files_mutex.Lock()
     for _, f := range related_files[current_html] {
@@ -219,8 +216,7 @@ func handle_http(client net.Conn, request *http.HttpRequest) {
                 related_files_mutex.Unlock()
                 response.Headers["Content-Length"] = strconv.Itoa(len(file_content) + len(WEBSOCKET_INJECT_CODE))
                 response.Content                   = inject_websocket(file_path, file_content)
-                current_html                       = file_path
-                Util.Log(Util.INFO, "Change to `%s`", current_html)
+                current_html                       = file_path // maybe unecessary but just do it anyway (this could have already happen when handle socket)
             }
             Util.Log(Util.INFO, "Send file `%s` %d bytes to client", file_path, len(file_content))
 
