@@ -1,6 +1,7 @@
 package Util
 import (
     "fmt"
+    "log"
     "os"
     "path/filepath"
 )
@@ -10,9 +11,7 @@ const (
    ERR  = "[ERROR]"
 )
 func Log(log_type string, format string, args ...any) {
-    fmt.Printf("%-10s ", log_type)
-    fmt.Printf(format, args...)
-    fmt.Println();
+    log.Printf("%-10s %s", log_type, fmt.Sprintf(format, args...))
 }
 func Unimplemented() {
     Log(ERR, "Umimplemented\n")
@@ -21,7 +20,7 @@ func Unimplemented() {
 func Check_err(err error, fatal bool, info ...string) bool {
     if err != nil {
         if fatal { Log(ERR, err.Error()); } else { Log(WARN, err.Error()); }
-        for _, v := range info { Log(INFO, "\t%s", v); }
+        for _, v := range info { Log(INFO, "    %s", v); }
         if fatal { os.Exit(1) }
         return true;
     }
