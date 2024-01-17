@@ -41,6 +41,10 @@ func Parse_request(request string) *HttpRequest {
     for {
         request = request[end+2:]
         end = strings.Index(request, "\r\n")
+        if end == -1 {
+            Util.Log(Util.WARN, "Receive invalid header || or a special case")
+            return nil
+        }
         line = request[:end]
         if len(line) == 0 {break} // end of headers
         sep_index := strings.Index(line, ": ")

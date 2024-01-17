@@ -242,6 +242,7 @@ func handle_client(client net.Conn) {
     n, err := client.Read(buffer)
     if Util.Check_err(err, false, "Can't read from client") { return }
     request := http.Parse_request(string(buffer[:n]))
+    if (request == nil) { return }
     if request.Headers["Connection"] == "Upgrade" && request.Headers["Upgrade"] == "websocket" {
         if has_websocket.Load() {
             websocket_channel <- "CLOSE"
