@@ -111,19 +111,18 @@ func main() {
 func on_file_change(file_path string) {
     if !has_websocket.Load() { return }
     related_files_mutex.Lock()
+    defer related_files_mutex.Unlock()
     if index := slices.Index(related_files[current_html], file_path); index != -1 {
         if filepath.Ext(file_path) == ".css" { websocket_channel <- RELOAD_CSS_MSG } else { websocket_channel <- RELOAD_MSG }
-        related_files_mutex.Unlock()
-        return
+    } else {
+        // file is edited but not the currently in use
+        files_on_wait_mutex.Lock()
+        defer files_on_wait_mutex.Unlock()
+        if index := slices.Index(files_on_wait_reload, file_path); index == -1 {
+            files_on_wait_reload = append(files_on_wait_reload, file_path)
+            Util.Log(Util.INFO, "Add `%s` to list of waiting to update files", file_path)
+        }
     }
-    related_files_mutex.Unlock()
-    // file is edited but not the currently in use
-    files_on_wait_mutex.Lock()
-    if index := slices.Index(files_on_wait_reload, file_path); index == -1 {
-        files_on_wait_reload = append(files_on_wait_reload, file_path)
-        Util.Log(Util.INFO, "Add `%s` to list of waiting to update files", file_path)
-    }
-    files_on_wait_mutex.Unlock()
 }
 
 func open_default_browser() {
